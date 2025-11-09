@@ -35,13 +35,28 @@ uv sync
 
 ### 3. Train Models
 
+**NEW: Separate Training Scripts** - Now with fixed logging and progress tracking!
+
 ```bash
-# Standard training (8GB+ GPU)
+# Train both models (standard settings)
 .venv/bin/python train.py
 
-# Or optimized for 4GB GPU
+# Train only XGBoost baseline (fastest)
+.venv/bin/python train_baseline.py
+
+# Train only FT-Transformer (with progress bars!)
+.venv/bin/python train_ft_transformer.py
+
+# Train FT-Transformer optimized for 4GB GPU
+.venv/bin/python train_ft_transformer.py --optimized
+
+# Train both models optimized for 4GB GPU
 .venv/bin/python train_optimized.py
 ```
+
+✅ **Fixed**: FT-Transformer now shows training progress and logs
+✅ **Fixed**: No more stack pop errors
+✅ **New**: Separate baseline and FT-Transformer scripts
 
 ### 4. Evaluate
 
@@ -161,21 +176,39 @@ train_df, val_df, test_df = download_and_prepare_data(
 
 ```
 diabetes-ft/
-├── preprocessing_pipeline.py   # Advanced preprocessing pipeline
-├── data.py                     # Data download and preparation
-├── train.py                    # Standard training script
-├── train_optimized.py          # Optimized for 4GB GPU
-├── evaluate.py                 # Model evaluation
-├── compare_preprocessing.py    # Compare preprocessing strategies
-├── PREPROCESSING_GUIDE.md      # Comprehensive preprocessing guide
-├── OPTIMIZATION_GUIDE.md       # Model optimization guide
-├── CHANGES_SUMMARY.md          # Summary of changes
-└── pyproject.toml              # Project dependencies
+├── preprocessing_pipeline.py      # Advanced preprocessing pipeline
+├── data.py                        # Data download and preparation
+│
+├── train_baseline.py              # ⭐ XGBoost training (NEW)
+├── train_ft_transformer.py        # ⭐ FT-Transformer training (NEW - FIXED logging!)
+├── train.py                       # Both models (wrapper)
+├── train_optimized.py             # Both models optimized for 4GB GPU
+│
+├── evaluate.py                    # Model evaluation
+├── compare_preprocessing.py       # Compare preprocessing strategies
+├── compare_synthetic_ratios.py    # Compare balancing ratios
+├── download_multi_datasets.py     # Multi-dataset downloader
+│
+├── TRAINING_GUIDE.md              # ⭐ Complete training guide (NEW)
+├── PREPROCESSING_GUIDE.md         # Comprehensive preprocessing guide
+├── SYNTHETIC_DATA_REDUCTION.md    # Synthetic data reduction strategies
+├── OPTIMIZATION_GUIDE.md          # Model optimization guide
+├── CHANGES_SUMMARY.md             # Summary of changes
+└── pyproject.toml                 # Project dependencies
 ```
+
+**⭐ New in this version:**
+- Separate training scripts for baseline and FT-Transformer
+- **Fixed FT-Transformer logging** - now shows progress bars!
+- **Fixed stack pop error** - clean training output
+- Detailed training guide with examples
+- Partial balancing to reduce synthetic data from 60% to 6%
 
 ## Documentation
 
+- **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)**: ⭐ Complete training guide with fixed logging (NEW)
 - **[PREPROCESSING_GUIDE.md](PREPROCESSING_GUIDE.md)**: Complete preprocessing pipeline documentation
+- **[SYNTHETIC_DATA_REDUCTION.md](SYNTHETIC_DATA_REDUCTION.md)**: Reducing synthetic data proportion
 - **[OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md)**: GPU optimization and class imbalance solutions
 - **[CHANGES_SUMMARY.md](CHANGES_SUMMARY.md)**: Changes between training scripts
 

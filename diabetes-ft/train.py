@@ -1,165 +1,110 @@
+"""
+Main Training Script
+
+This script trains both FT-Transformer and XGBoost models.
+
+NEW STRUCTURE:
+- Baseline (XGBoost) is now in: train_baseline.py
+- FT-Transformer is now in: train_ft_transformer.py
+
+This file now serves as a convenient wrapper to train both models.
+
+Usage:
+    # Train both models
+    python train.py
+
+    # Train only baseline
+    python train_baseline.py
+
+    # Train only FT-Transformer
+    python train_ft_transformer.py
+
+    # Train FT-Transformer with optimized settings for 4GB GPU
+    python train_ft_transformer.py --optimized
+"""
+
 import os
-import pandas as pd
-import numpy as np
-import torch
-from pytorch_tabular import TabularModel
-from pytorch_tabular.models import FTTransformerConfig
-from pytorch_tabular.config import DataConfig, OptimizerConfig, TrainerConfig
-from xgboost import XGBClassifier
-from sklearn.utils.class_weight import compute_sample_weight
-import pickle
-from omegaconf import DictConfig, ListConfig
-from omegaconf.base import Container, ContainerMetadata
-
-# Set float32 matmul precision for better performance on Tensor Cores
-torch.set_float32_matmul_precision('medium')
-
-# Add safe globals for PyTorch 2.6+ checkpoint loading
-torch.serialization.add_safe_globals([DictConfig, ListConfig, Container, ContainerMetadata])
+import sys
 
 
-def train_ft_transformer():
-    """Train FT-Transformer using pytorch_tabular."""
+def main():
+    """Train both baseline and FT-Transformer models."""
 
-    print("="*60)
-    print("Training FT-Transformer")
-    print("="*60)
+    print("\n" + "="*80)
+    print("DIABETES PREDICTION MODEL TRAINING")
+    print("="*80)
+    print("\nThis script will train both models:")
+    print("  1. XGBoost Baseline (train_baseline.py)")
+    print("  2. FT-Transformer (train_ft_transformer.py)")
+    print("\nNote: You can also train them separately using the individual scripts.")
+    print("="*80)
 
-    # Load preprocessed data
-    train_df = pd.read_csv('data/train.csv')
-    val_df = pd.read_csv('data/val.csv')
+    # Check if data exists
+    if not os.path.exists('data/train.csv'):
+        print("\n❌ Training data not found!")
+        print("\nPlease run data preparation first:")
+        print("   .venv/bin/python data.py")
+        print("\nThis will download and preprocess the diabetes dataset.")
+        sys.exit(1)
 
-    print(f"Train size: {len(train_df)}")
-    print(f"Val size: {len(val_df)}")
+    # Import training functions
+    try:
+        from train_baseline import train_xgboost_baseline
+        from train_ft_transformer import train_ft_transformer
+    except ImportError as e:
+        print(f"\n❌ Failed to import training modules: {e}")
+        sys.exit(1)
 
-    # Get feature columns (all except target)
-    feature_cols = [col for col in train_df.columns if col != 'Diabetes_012']
+    # Train XGBoost baseline
+    print("\n\n" + "="*80)
+    print("STEP 1/2: TRAINING XGBOOST BASELINE")
+    print("="*80)
 
-    # Data configuration
-    data_config = DataConfig(
-        target=['Diabetes_012'],
-        continuous_cols=feature_cols,
-        categorical_cols=[],
-        num_workers=4,
+    xgb_model = train_xgboost_baseline(
+        n_estimators=300,
+        max_depth=5,
+        learning_rate=0.05,
+        use_gpu=True,
+        verbose=True
     )
 
-    # Trainer configuration
-    trainer_config = TrainerConfig(
-        batch_size=128,  # Reduced from 1024 for 4GB GPU
+    if xgb_model is None:
+        print("\n❌ XGBoost training failed!")
+        sys.exit(1)
+
+    # Train FT-Transformer
+    print("\n\n" + "="*80)
+    print("STEP 2/2: TRAINING FT-TRANSFORMER")
+    print("="*80)
+
+    ft_model = train_ft_transformer(
+        batch_size=128,
         max_epochs=50,
-        early_stopping='valid_loss',
+        embed_dim=64,
+        num_heads=4,
+        num_attn_blocks=2,
+        learning_rate=1e-3,
         early_stopping_patience=10,
-        checkpoints='valid_loss',
-        load_best=False,  # Don't load best to avoid checkpoint loading issues
-        trainer_kwargs=dict(
-            enable_model_summary=True,
-            enable_progress_bar=False,  # Disable to avoid rich console live stack issues
-            precision='16-mixed',  # Mixed precision training to reduce memory
-        ),
+        use_gpu=True,
+        verbose=True
     )
 
-    # Optimizer configuration
-    optimizer_config = OptimizerConfig()
+    if ft_model is None:
+        print("\n❌ FT-Transformer training failed!")
+        sys.exit(1)
 
-    # FT-Transformer model configuration
-    model_config = FTTransformerConfig(
-        task='classification',
-        input_embed_dim=64,  # Reduced from 192 (3x smaller)
-        num_heads=4,  # Reduced from 8 (2x smaller)
-        num_attn_blocks=2,  # Reduced from 3
-        attn_dropout=0.2,
-        ff_dropout=0.1,
-        learning_rate=1e-3,  # Slightly higher LR for faster convergence
-        # ff_dim_multiplier=2,  # Reduced from default 4
-    )
-
-    # Create tabular model
-    tabular_model = TabularModel(
-        data_config=data_config,
-        model_config=model_config,
-        optimizer_config=optimizer_config,
-        trainer_config=trainer_config,
-    )
-
-    # Train the model
-    print("\nStarting training...")
-    tabular_model.fit(train=train_df, validation=val_df)
-
-    # Save the model
-    os.makedirs('models', exist_ok=True)
-    tabular_model.save_model('models/ft_transformer')
-    print("\nFT-Transformer saved to models/ft_transformer/")
-
-    return tabular_model
-
-
-def train_xgboost():
-    """Train XGBoost baseline."""
-
-    print("\n" + "="*60)
-    print("Training XGBoost Baseline")
-    print("="*60)
-
-    # Load preprocessed data
-    train_df = pd.read_csv('data/train.csv')
-    val_df = pd.read_csv('data/val.csv')
-
-    # Separate features and target
-    X_train = train_df.drop('Diabetes_012', axis=1)
-    y_train = train_df['Diabetes_012']
-    X_val = val_df.drop('Diabetes_012', axis=1)
-    y_val = val_df['Diabetes_012']
-
-    # Train XGBoost
-    print("\nTraining XGBoost...")
-    
-    # Calculate class weights for imbalanced data
-    class_weights = compute_sample_weight('balanced', y_train)
-    
-    xgb_model = XGBClassifier(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='multi:softprob',
-        num_class=3,
-        random_state=42,
-        tree_method='hist',
-        eval_metric='mlogloss',
-        scale_pos_weight=1,  # Handle multiclass imbalance
-        use_label_encoder=False,
-        device='cuda',  # Use GPU if available (XGBoost 3.1+)
-    )
-
-    xgb_model.fit(
-        X_train, y_train,
-        sample_weight=class_weights,  # Apply class weights
-        eval_set=[(X_val, y_val)],
-        verbose=10
-    )
-
-    # Save the model
-    os.makedirs('models', exist_ok=True)
-    with open('models/xgboost_model.pkl', 'wb') as f:
-        pickle.dump(xgb_model, f)
-    print("\nXGBoost saved to models/xgboost_model.pkl")
-
-    return xgb_model
+    # Final summary
+    print("\n\n" + "="*80)
+    print("ALL TRAINING COMPLETE!")
+    print("="*80)
+    print("\n✅ XGBoost baseline trained successfully")
+    print("\n✅ FT-Transformer trained successfully")
+    print("\nModels saved to:")
+    print("  - models/xgboost_baseline.pkl")
+    print("  - models/ft_transformer/")
+    print("\nNext step: Run 'python evaluate.py' to evaluate on test set")
+    print("="*80)
 
 
 if __name__ == "__main__":
-    # Check if data exists
-    if not os.path.exists('data/train.csv'):
-        print("Data not found. Running data preparation...")
-        from data import download_and_prepare_data
-        download_and_prepare_data()
-
-    # Train FT-Transformer
-    ft_model = train_ft_transformer()
-
-    # Train XGBoost
-    xgb_model = train_xgboost()
-
-    print("\n" + "="*60)
-    print("Training Complete!")
-    print("="*60)
-    print("\nRun 'python evaluate.py' to evaluate the models on the test set.")
+    main()
