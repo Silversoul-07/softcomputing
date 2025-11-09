@@ -14,6 +14,8 @@ data/
 models/
 *.csv
 *.pkl
+*.json
+preprocessing_report.json
 
 # Jupyter
 .ipynb_checkpoints
