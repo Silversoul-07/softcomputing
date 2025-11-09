@@ -33,7 +33,8 @@ class PreprocessingPipeline:
         self,
         imputation_strategy: str = 'knn',
         balancing_strategy: str = 'smote',
-        random_state: int = 42
+        random_state: int = 42,
+        target_imbalance_ratio: float = None
     ):
         """
         Initialize preprocessing pipeline.
@@ -54,10 +55,16 @@ class PreprocessingPipeline:
                 - 'smote_tomek': SMOTE + Tomek links (hybrid)
                 - 'smote_enn': SMOTE + ENN (hybrid)
             random_state: Random seed for reproducibility
+            target_imbalance_ratio: Target max/min class ratio after balancing
+                - None (default): Full balance (1:1:1 ratio, ~60% synthetic)
+                - 10: Moderate balance (10:1 ratio, ~7% synthetic)
+                - 20: Light balance (20:1 ratio, ~3% synthetic)
+                - Higher values = less synthetic data
         """
         self.imputation_strategy = imputation_strategy
         self.balancing_strategy = balancing_strategy
         self.random_state = random_state
+        self.target_imbalance_ratio = target_imbalance_ratio
         self.scaler = StandardScaler()
         self.imputer = None
         self.sampler = None
@@ -157,13 +164,83 @@ class PreprocessingPipeline:
         y: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series]:
         """Handle class imbalance using selected balancing strategy."""
-        self.sampler = self._create_sampler()
-        X_resampled, y_resampled = self.sampler.fit_resample(X, y)
+        # If target_imbalance_ratio is set, use partial balancing
+        if self.target_imbalance_ratio is not None:
+            X_resampled, y_resampled = self._partial_balance(X, y)
+        else:
+            # Full balancing (default)
+            self.sampler = self._create_sampler()
+            X_resampled, y_resampled = self.sampler.fit_resample(X, y)
 
         # Convert back to DataFrame/Series with proper column names
         X_resampled = pd.DataFrame(X_resampled, columns=X.columns)
         y_resampled = pd.Series(y_resampled, name=y.name)
 
+        return X_resampled, y_resampled
+
+    def _partial_balance(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Apply partial balancing to target a specific imbalance ratio.
+
+        Args:
+            X: Features
+            y: Target
+
+        Returns:
+            X_resampled, y_resampled with controlled synthetic data
+        """
+        class_counts = Counter(y)
+        max_count = max(class_counts.values())
+
+        # Calculate target samples for each class
+        sampling_strategy = {}
+        for class_label, count in class_counts.items():
+            # Target: max_count / target_imbalance_ratio
+            target = max(count, int(max_count / self.target_imbalance_ratio))
+            if target > count:
+                sampling_strategy[class_label] = target
+
+        if not sampling_strategy:
+            # No balancing needed
+            return X.values, y.values
+
+        # Create sampler with custom sampling strategy
+        if self.balancing_strategy == 'smote':
+            sampler = SMOTE(
+                sampling_strategy=sampling_strategy,
+                k_neighbors=3,
+                random_state=self.random_state
+            )
+        elif self.balancing_strategy == 'adasyn':
+            sampler = ADASYN(
+                sampling_strategy=sampling_strategy,
+                n_neighbors=3,
+                random_state=self.random_state
+            )
+        elif self.balancing_strategy == 'borderline':
+            sampler = BorderlineSMOTE(
+                sampling_strategy=sampling_strategy,
+                k_neighbors=3,
+                random_state=self.random_state
+            )
+        elif self.balancing_strategy == 'random':
+            sampler = RandomOverSampler(
+                sampling_strategy=sampling_strategy,
+                random_state=self.random_state
+            )
+        else:
+            # Fallback to SMOTE for other strategies
+            sampler = SMOTE(
+                sampling_strategy=sampling_strategy,
+                k_neighbors=3,
+                random_state=self.random_state
+            )
+
+        X_resampled, y_resampled = sampler.fit_resample(X, y)
         return X_resampled, y_resampled
 
     def combine_datasets(

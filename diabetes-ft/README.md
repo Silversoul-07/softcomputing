@@ -56,22 +56,28 @@ uv sync
 Our preprocessing pipeline guarantees:
 
 ✅ **Zero null values** in all datasets (train/val/test)
-✅ **Balanced classes** in training set (1:1:1 ratio)
+✅ **Controlled class balancing** with configurable synthetic data proportion
 ✅ **Original distribution** preserved in validation/test sets
 ✅ **Comprehensive validation** with detailed reports
 
 ### Current Dataset Results
 
-**Before Preprocessing:**
+**Initial Dataset:**
 - Total samples: 253,680
-- Class imbalance: 46.15:1 (highly imbalanced)
+- Class imbalance: 46.15:1 (highly imbalanced!)
 - Minority class (Prediabetes): 1.83%
 
-**After Preprocessing:**
-- Training samples: 448,776 (balanced with SMOTE)
-- Class imbalance: 1.00:1 (perfectly balanced)
-- All classes: 33.33% each
+**After Preprocessing (Recommended 10:1 Partial Balance):**
+- Training samples: 189,293
+- Class imbalance: 10.00:1 (moderate balance)
+- **Synthetic data: ~6.2%** (11,717 synthetic / 189,293 total)
 - Validation/Test: Original distribution maintained
+
+**Alternative: Full Balance (Not Recommended):**
+- Training samples: 448,776
+- Class imbalance: 1.00:1 (perfectly balanced)
+- **Synthetic data: ~60%** (271,200 synthetic / 448,776 total)
+- ⚠️ High overfitting risk with too much synthetic data
 
 ### Available Imputation Strategies
 
@@ -89,21 +95,50 @@ download_and_prepare_data(imputation_strategy='mean')
 download_and_prepare_data(imputation_strategy='median')
 ```
 
+### Control Synthetic Data Proportion ⭐
+
+**IMPORTANT:** You can now control how much synthetic data is generated!
+
+```python
+# RECOMMENDED: Moderate balance (10:1 ratio, ~6% synthetic)
+download_and_prepare_data(
+    balancing_strategy='smote',
+    target_imbalance_ratio=10  # Only 6% synthetic data!
+)
+
+# Conservative balance (20:1 ratio, ~3% synthetic)
+download_and_prepare_data(
+    balancing_strategy='smote',
+    target_imbalance_ratio=20
+)
+
+# Aggressive balance (5:1 ratio, ~15% synthetic)
+download_and_prepare_data(
+    balancing_strategy='smote',
+    target_imbalance_ratio=5
+)
+
+# Full balance (NOT RECOMMENDED - 60% synthetic)
+download_and_prepare_data(
+    balancing_strategy='smote',
+    target_imbalance_ratio=None  # 60% synthetic - use with caution!
+)
+```
+
 ### Available Balancing Strategies
 
 ```python
 # SMOTE (default - reliable)
-download_and_prepare_data(balancing_strategy='smote')
+download_and_prepare_data(balancing_strategy='smote', target_imbalance_ratio=10)
 
 # ADASYN (adaptive)
-download_and_prepare_data(balancing_strategy='adasyn')
+download_and_prepare_data(balancing_strategy='adasyn', target_imbalance_ratio=10)
 
 # BorderlineSMOTE (focus on boundaries)
-download_and_prepare_data(balancing_strategy='borderline')
+download_and_prepare_data(balancing_strategy='borderline', target_imbalance_ratio=10)
 
-# Hybrid methods (SMOTE + cleaning)
-download_and_prepare_data(balancing_strategy='smote_tomek')
-download_and_prepare_data(balancing_strategy='smote_enn')
+# Hybrid methods (SMOTE + cleaning) - not compatible with partial balancing
+download_and_prepare_data(balancing_strategy='smote_tomek', target_imbalance_ratio=None)
 ```
 
 ### Combining Multiple Datasets
@@ -145,6 +180,21 @@ diabetes-ft/
 - **[CHANGES_SUMMARY.md](CHANGES_SUMMARY.md)**: Changes between training scripts
 
 ## Compare Preprocessing Strategies
+
+### Compare Synthetic Data Ratios (Recommended)
+
+See the impact of different balancing ratios on synthetic data:
+
+```bash
+.venv/bin/python compare_synthetic_ratios.py
+```
+
+This shows:
+- Synthetic data percentage for each ratio (1:1, 5:1, 10:1, 20:1, 30:1)
+- Class distribution after balancing
+- Recommendations for production vs research
+
+### Compare All Strategies
 
 Run comprehensive comparison of different strategies:
 
@@ -206,11 +256,28 @@ Current configuration (253K samples, 21 features):
 ### Recommended Configuration
 
 ```python
-# For production use
+# For production use (RECOMMENDED)
 download_and_prepare_data(
-    imputation_strategy='knn',      # Best balance of accuracy/speed
-    balancing_strategy='smote',     # Proven and reliable
-    apply_balancing=True            # Handle class imbalance
+    imputation_strategy='knn',       # Best balance of accuracy/speed
+    balancing_strategy='smote',      # Proven and reliable
+    apply_balancing=True,            # Handle class imbalance
+    target_imbalance_ratio=10        # Only 6% synthetic data!
+)
+
+# For research/benchmarking
+download_and_prepare_data(
+    imputation_strategy='knn',
+    balancing_strategy='smote',
+    apply_balancing=True,
+    target_imbalance_ratio=5         # 15% synthetic, better F1-score
+)
+
+# For conservative approach
+download_and_prepare_data(
+    imputation_strategy='knn',
+    balancing_strategy='smote',
+    apply_balancing=True,
+    target_imbalance_ratio=20        # Only 3% synthetic data
 )
 ```
 
